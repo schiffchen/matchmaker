@@ -18,7 +18,4 @@ update_status = ->
     .c('priority').t('0')
 
 process_message = (stanza) ->
-  # todo. (right now, just throw back everything)
-  stanza.attrs.to = stanza.attrs.from
-  delete stanza.attrs.from
-  client.send stanza
+
