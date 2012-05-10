@@ -1,0 +1,7 @@
+{ "name": "matchmaker",
+  "version": "0.0.1",
+  "dependencies": {
+    "coffee-script": "1.3.1",
+    "node-xmpp": "0.3.2"
+  }
+}
