@@ -114,7 +114,7 @@ class Queue
     dbc.query("SELECT queue.id, queue.resource, players.jid FROM queue, players WHERE queue.id = #{qid} AND players.id = queue.user_id  LIMIT 1", (error, response) =>
       queueInformation = response[0]
       
-      @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': 'dummyplayer@battleship.me'})
+      @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': "#{queueInformation['jid']}/#{queueInformation['resource']}"})
         .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
         .c('queueing', {'action': 'success'}).up()
         .c('queue', {'id': queueInformation['id']})
