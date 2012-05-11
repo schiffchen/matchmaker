@@ -66,7 +66,8 @@ class MatchMaker extends BasicBot
   
   help: (to) ->
     @say(to, """You wanna help? Here you are:
-      help - Shows this message""")
+      help - Shows this message
+      count players - Counts all players in the database""")
     
 #-----------------------------------------------------------------------------#
 
