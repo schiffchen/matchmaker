@@ -38,6 +38,10 @@ class BasicBot
 #-----------------------------------------------------------------------------#
 
 class MatchMaker extends BasicBot
+  constructor: (@xmppClient) ->
+    @queue = new Queue(@)
+    super(@xmppClient)
+    
   showReadyStatus: ->
     @xmppClient.send new xmpp.Element('presence', {})
       .c('show').t('chat').up()
@@ -50,6 +54,8 @@ class MatchMaker extends BasicBot
         when 'message'
           if stanza.type == 'chat'
             @processCommand(stanza)
+          else if stanza.type == 'normal'
+            @processAction(stanza)
 
   processCommand: (stanza) ->
     body = stanza.getChild('body')
@@ -63,11 +69,56 @@ class MatchMaker extends BasicBot
         )
       else
         @say(stanza.from, 'I am so sorry, I did not understand you! :-(')
+        
+  processAction: (stanza) ->
+    battleship = stanza.getChild('battleship')
+    if battleship
+      if queueing = battleship.getChild('queueing')
+        if queueing.attrs.action == 'request'
+          @queue.enqueueUser(stanza)
   
   help: (to) ->
     @say(to, """You wanna help? Here you are:
       help - Shows this message
       count players - Counts all players in the database""")
+
+#-----------------------------------------------------------------------------#
+
+class Queue
+  constructor: (mm) ->
+    @mm = mm
+        
+  enqueueUser: (stanza) ->
+    jidParts = stanza.from.split('/')
+    id = 0
+
+    dbc.query("SELECT id FROM players WHERE jid='#{jidParts[0]}' LIMIT 1", (error, response) =>
+      if response[0]
+        id = response[0]['id']
+        @addToQueue(id, jidParts[1])
+      else
+        dbc.query("INSERT INTO players (jid) VALUES ('#{jidParts[0]}');
+          SELECT id FROM players WHERE jid='#{jidParts[0]}' LIMIT 1", (error, response) => 
+          @addToQueue(response['insertId'], jidParts[1])
+        )
+    )
+    
+  addToQueue: (uid, resource) ->
+    timestamp = Math.round((new Date()).getTime() / 1000)
+    # ToDo: Handle duplicate queue entries
+    dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{timestamp}, #{uid}, '#{resource}')", (error, response) =>
+      @returnQueueId(response['insertId'])
+    )
+  
+  returnQueueId: (qid) ->
+    dbc.query("SELECT queue.id, queue.resource, players.jid FROM queue, players WHERE queue.id = #{qid} AND players.id = queue.user_id  LIMIT 1", (error, response) =>
+      queueInformation = response[0]
+      
+      @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': 'dummyplayer@battleship.me'})
+        .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+        .c('queueing', {'action': 'success'}).up()
+        .c('queue', {'id': queueInformation['id']})
+    )
     
 #-----------------------------------------------------------------------------#
 
