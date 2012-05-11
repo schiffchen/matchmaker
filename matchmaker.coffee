@@ -8,12 +8,23 @@ Matchmaker
 #-----------------------------------------------------------------------------#
 
 xmpp = require('node-xmpp')
+mysql = require('mysql')
 
 # I feel like I have to expand the String object because
 # I like to have a startsWith()
 if typeof String.prototype.startsWith != 'function'
   String.prototype.startsWith = (str) ->
     this.indexOf(str) == 0
+    
+#-----------------------------------------------------------------------------#
+    
+dbc = mysql.createClient({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+})
+
+dbc.query('USE ' + process.env.DB_DATABASE)
 
 #-----------------------------------------------------------------------------#
 
@@ -46,6 +57,10 @@ class MatchMaker extends BasicBot
       message = body.getText()
       if message.startsWith('help')
         @help(stanza.from)
+      else if message.startsWith('count players')
+        dbc.query('SELECT count(*) FROM players;', (error, response) =>
+          @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
+        )
       else
         @say(stanza.from, 'I am so sorry, I did not understand you! :-(')
   
