@@ -116,7 +116,7 @@ class MatchMaker extends BasicBot
       if queueing = battleship.getChild('queueing')
         if queueing.attrs.action == 'request'
           @queue.enqueueUser(stanza)
-        if queueing.attr.action == 'ping'
+        if queueing.attrs.action == 'ping'
           @queue.pingQueue(stanza, queueing)
            
   ###
