@@ -114,6 +114,7 @@ class Queue
     dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{timestamp}, #{uid}, '#{resource}')", (error, response) =>
       @returnQueueId(response['insertId'])
       console.log("Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
+      @cleanupQueue()
     )
   
   returnQueueId: (qid) ->
@@ -124,6 +125,13 @@ class Queue
         .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
         .c('queueing', {'action': 'success'}).up()
         .c('queue', {'id': queueInformation['id']})
+    )
+  
+  cleanupQueue: ->
+    now = Math.round((new Date()).getTime() / 1000)
+    expired = now - 30
+    dbc.query("DELETE FROM queue WHERE queued_at <= #{expired}", (error, response) =>
+      console.log("Deleted #{response.affectedRows} expired queue ids")
     )
     
 #-----------------------------------------------------------------------------#
