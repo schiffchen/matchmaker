@@ -47,6 +47,12 @@ class MatchMaker extends BasicBot
       .c('show').t('chat').up()
       .c('status').t('The matchmaker is ready!').up()
       .c('priority').t('0')
+    
+  showBusyStatus: ->
+    @xmppClient.send new xmpp.Element('presence', {})
+      .c('show').t('dnd').up()
+      .c('status').t('Too busy right now, try again later.').up()
+      .c('priority').t('0')
 
   handleStanza: (stanza) ->
     if stanza.attrs.type != 'error'
@@ -54,6 +60,7 @@ class MatchMaker extends BasicBot
         when 'message'
           if stanza.type == 'chat'
             @processCommand(stanza)
+            @processAction(stanza)
           else if stanza.type == 'normal'
             @processAction(stanza)
 
@@ -67,8 +74,6 @@ class MatchMaker extends BasicBot
         dbc.query('SELECT count(*) FROM players;', (error, response) =>
           @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
         )
-      else
-        @say(stanza.from, 'I am so sorry, I did not understand you! :-(')
         
   processAction: (stanza) ->
     battleship = stanza.getChild('battleship')
