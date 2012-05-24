@@ -116,7 +116,9 @@ class MatchMaker extends BasicBot
       if queueing = battleship.getChild('queueing')
         if queueing.attrs.action == 'request'
           @queue.enqueueUser(stanza)
-  
+        if queueing.attr.action == 'ping'
+          @queue.pingQueue(stanza, queueing)
+           
   ###
     help
     
@@ -182,6 +184,32 @@ class Queue
         .c('queue', {'id': queueInformation['id']})
     )
   
+  ###
+    pingQueue
+    
+    Ping the queue, reset the timestamp to keep the queue id
+    alive for another 30 seconds
+  ###
+  pingQueue: (stanza, queueing) ->
+    id = queueing.attrs.id
+    now = Math.round((new Date()).getTime() / 1000)
+    dbc.query("UPDATE queue SET queued_at=#{now} WHERE id=#{id}", (error, response) =>
+      @confirmPing(stanza, queueing)
+      console.log("Updated timestamp of qid#{id} because I got a ping.")
+      @cleanupQueue()
+    )
+    
+  ###
+    confirmPing
+    
+    Confirm a ping by sending it back to the client
+  ###
+  confirmPing: (stanza, queueing) ->
+    id = queueing.attrs.id
+    @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': stanza.from})
+      .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+      .c('queueing', {'action': 'ping', 'id': id})
+
   ###
     cleanupQueue
     
