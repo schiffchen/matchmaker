@@ -113,6 +113,7 @@ class Queue
     # ToDo: Handle duplicate queue entries
     dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{timestamp}, #{uid}, '#{resource}')", (error, response) =>
       @returnQueueId(response['insertId'])
+      console.log("Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
     )
   
   returnQueueId: (qid) ->
