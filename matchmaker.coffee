@@ -180,8 +180,7 @@ class Queue
       
       @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': "#{queueInformation['jid']}/#{queueInformation['resource']}"})
         .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-        .c('queueing', {'action': 'success'}).up()
-        .c('queue', {'id': queueInformation['id']})
+        .c('queueing', {'action': 'success', 'id': queueInformation['id']})
     )
   
   ###
