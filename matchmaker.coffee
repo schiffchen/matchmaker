@@ -18,6 +18,10 @@ mysql = require('mysql')
 if typeof String.prototype.startsWith != 'function'
   String.prototype.startsWith = (str) ->
     this.indexOf(str) == 0
+
+# timestamp calculation in JS is ugly.
+now_ts = ->
+  Math.round((new Date()).getTime() / 1000)
     
 #-----------------------------------------------------------------------------#
     
@@ -104,10 +108,6 @@ class MatchMaker extends BasicBot
         dbc.query('SELECT count(*) FROM players;', (error, response) =>
           @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
         )
-      
-      # tmp debug for assigning
-      else if message.startsWith('assign')
-        @queue.assignPlayers()
         
   ###
     processAction
@@ -165,9 +165,8 @@ class Queue
     Add the user/resource to the queue.
   ###
   addToQueue: (uid, resource) ->
-    timestamp = Math.round((new Date()).getTime() / 1000)
     # ToDo: Handle duplicate queue entries
-    dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{timestamp}, #{uid}, '#{resource}')", (error, response) =>
+    dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{now_ts()}, #{uid}, '#{resource}')", (error, response) =>
       @returnQueueId(response['insertId'])
       console.log("Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
       @cleanupQueue()
@@ -196,8 +195,7 @@ class Queue
   ###
   pingQueue: (stanza, queueing) ->
     id = queueing.attrs.id
-    now = Math.round((new Date()).getTime() / 1000)
-    dbc.query("UPDATE queue SET queued_at=#{now} WHERE id=#{id}", (error, response) =>
+    dbc.query("UPDATE queue SET queued_at=#{now_ts()} WHERE id=#{id}", (error, response) =>
       @confirmPing(stanza, queueing)
       console.log("Updated timestamp of qid#{id} because I got a ping.")
       @cleanupQueue()
@@ -221,8 +219,7 @@ class Queue
     Remove queue entries which are older than 30 seconds.
   ###
   cleanupQueue: ->
-    now = Math.round((new Date()).getTime() / 1000)
-    expired = now - 30
+    expired = now_ts() - 30
     dbc.query("DELETE FROM queue WHERE queued_at <= #{expired}", (error, response) =>
       console.log("Deleted #{response.affectedRows} expired queue ids")
     )
