@@ -104,6 +104,10 @@ class MatchMaker extends BasicBot
         dbc.query('SELECT count(*) FROM players;', (error, response) =>
           @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
         )
+      
+      # tmp debug for assigning
+      else if message.startsWith('assign')
+        @queue.assignPlayers()
         
   ###
     processAction
@@ -168,6 +172,7 @@ class Queue
       console.log("Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
       @cleanupQueue()
     )
+    @assignPlayers()
   
   ###
     returnQueueId
@@ -197,6 +202,7 @@ class Queue
       console.log("Updated timestamp of qid#{id} because I got a ping.")
       @cleanupQueue()
     )
+    @assignPlayers()
     
   ###
     confirmPing
@@ -219,6 +225,39 @@ class Queue
     expired = now - 30
     dbc.query("DELETE FROM queue WHERE queued_at <= #{expired}", (error, response) =>
       console.log("Deleted #{response.affectedRows} expired queue ids")
+    )
+    
+  ###
+    assignPlayers
+    
+    Checks if there are two matching players. If yes,
+    assign them.
+  ###
+  assignPlayers: ->
+    #@cleanupQueue()
+    dbc.query("SELECT count(*) FROM queue", (error, response) =>
+      queueCount = response[0]['count(*)']
+      while queueCount >= 2
+        dbc.query("SELECT queue.id, CONCAT(players.jid, '/', queue.resource) AS jid
+                   FROM queue, players WHERE players.id=queue.user_id    
+                   ORDER BY queue.queued_at ASC
+                   LIMIT 2", (error, response) =>
+          # Assign the two players to each other
+          @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[0].jid})
+            .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+            .c('queueing', {'action': 'assign', 'id': response[0].id}).up()
+            .c('partner', {'jid': response[1].jid})
+          @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[1].jid})
+            .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+            .c('queueing', {'action': 'assign', 'id': response[1].id}).up()
+            .c('partner', {'jid': response[0].jid})
+          console.log("Assigned #{response[0].jid} and #{response[1].jid}")
+          
+          # delete the queueing entry. maybe this should be done after confirmation
+          # todo
+          dbc.query("DELETE FROM queue WHERE id IN (#{response[0].id},#{response[1].id})")
+        )
+        queueCount -= 2;
     )
     
 #-----------------------------------------------------------------------------#
