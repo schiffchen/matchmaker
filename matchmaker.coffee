@@ -245,14 +245,16 @@ class Queue
                    LIMIT 2", (error, response) =>
           # Assign the two players to each other
           if response.length == 2
+            matchid = require('crypto').createHash('md5').update("#{now_ts()}#{response[0].jid}#{response[1].jid}").digest('hex');
+            
             @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[0].jid})
               .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-              .c('queueing', {'action': 'assign', 'jid': response[1]['jid'], 'mid': 42})
+              .c('queueing', {'action': 'assign', 'jid': response[1]['jid'], 'mid': matchid})
             @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[1].jid})
               .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-              .c('queueing', {'action': 'assign', 'jid': response[0]['jid'], 'mid': 42})
+              .c('queueing', {'action': 'assign', 'jid': response[0]['jid'], 'mid': matchid})
               
-            console.log("Assigned #{response[0]['jid']} and #{response[1]['jid']}")
+            console.log("Assigned #{response[0]['jid']} and #{response[1]['jid']}. Match: #{matchid}")
             
             # delete the queueing entry. maybe this should be done after confirmation
             # todo
@@ -271,8 +273,29 @@ class Statistic
     
   track: (stanza, result) ->
     console.log('ohai. I just got an statistical item to track')
-    @confirm(stanza, result)
+    @insertOrPublish(stanza, result)
     
+  insertOrPublish: (stanza, result) ->
+    user = result.attrs.winner.split("/")[0]
+    dbc.query("SELECT id FROM players WHERE jid='#{user}'", (error, response) =>
+      userid = response[0]["id"]
+      
+      unless userid
+        userid = 0
+        
+      dbc.query("SELECT id, public FROM statistics WHERE mid='#{result.attrs.mid}' LIMIT 1", (error, response) =>
+        if response.length > 0
+          if response[0]['public']
+            @confirm(stanza, result)
+          else
+            dbc.query("UPDATE statistics SET public=1 WHERE id=#{response[0].id}")
+            @confirm(stanza, result)
+        else
+          dbc.query("INSERT INTO statistics (mid, winner_pid) VALUES (\"#{result.attrs.mid}\", #{userid})")
+          @confirm(stanza, result)
+      )
+    )
+
   confirm: (stanza, result) ->
     @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': stanza.from})
       .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
