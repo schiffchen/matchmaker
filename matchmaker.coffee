@@ -6,6 +6,14 @@ Matchmaker
 
 This server is designed to run on heroku. Therefore, we are using environment
 variables to allow our deploying machine to set up the settings dynamically.
+
+Used environment variables:
+  DB_HOST       - The database host
+  DB_USER       - The database user
+  DB_PASSWORD   - Password for the database user
+  DB_DATABASE   - Databases name
+  XMPP_JID      - The full jabber-id for the matchmaker.
+  XMPP_PASSWORD - The password for the matchmaker-jabber-account
 ###
 
 #-----------------------------------------------------------------------------#
@@ -13,38 +21,60 @@ variables to allow our deploying machine to set up the settings dynamically.
 xmpp = require('node-xmpp')
 mysql = require('mysql')
 
-# I feel like I have to expand the String object because
-# I like to have a startsWith()
+# Just a little helper to determinate if a string
+# starts with something or not
 if typeof String.prototype.startsWith != 'function'
   String.prototype.startsWith = (str) ->
     this.indexOf(str) == 0
 
-# timestamp calculation in JS is ugly.
+# timestamp calculation in JS is ugly, so
+# we need that little helper method here.
 now_ts = ->
   Math.round((new Date()).getTime() / 1000)
-    
-#-----------------------------------------------------------------------------#
-    
-dbc = mysql.createClient({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-})
-
-dbc.query('USE ' + process.env.DB_DATABASE)
 
 #-----------------------------------------------------------------------------#
 
+###
+  BasicBot
+  
+  A very basic bot class. Simply does nothing but saying something
+  to someone
+###
 class BasicBot
+  ###
+    Constructor
+  ###
   constructor: (@xmppClient) ->
   
+  ###
+    Say
+    
+    A method to send someone a message!
+    
+    Params:
+      - to [String] The recipent
+      - message [String] The message
+  ###
   say: (to, message) ->
     @xmppClient.send new xmpp.Element('message', {'type': 'chat', 'to': to})
       .c('body').t(message)
       
 #-----------------------------------------------------------------------------#
 
+###
+  MatchMaker
+  
+  Our matchmaker class handling everything
+  
+  Extends BasicBot
+###
 class MatchMaker extends BasicBot
+  ###
+    Constructor
+    
+    MatchMaker's constructor. The matchmaker as a queue-object and a statistic
+    object which gets assigned in the constructor
+  ###
   constructor: (@xmppClient) ->
     @queue = new Queue(@)
     @statistic = new Statistic(@)
@@ -76,7 +106,11 @@ class MatchMaker extends BasicBot
   ###
     handleStanza
     
-    General handler for all incoming stanzas
+    General handler for all incoming stanzas. This function should
+    be set as handler for our XMPPClient
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
   ###
   handleStanza: (stanza) ->
     if stanza.attrs.type != 'error'
@@ -85,7 +119,9 @@ class MatchMaker extends BasicBot
           if stanza.type == 'chat'
             @processCommand(stanza)
             
-            # process actions here, too, as that's easier for @manuelVo right now
+            # process actions here, too. That's not what we have defined
+            # in our protocol, but it seems like some of the Android/Windows
+            # Phone-libs have problems with type==normal.
             @processAction(stanza)
           else if stanza.type == 'normal'
             @processAction(stanza)
@@ -94,17 +130,16 @@ class MatchMaker extends BasicBot
     processCommand
     
     Handler for command stanzas. Just fires the functions to do further stuff
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
   ###
   processCommand: (stanza) ->
     body = stanza.getChild('body')
     if body
       message = body.getText()
-      
-      # User asks for "help", help him.
       if message.startsWith('help')
         @help(stanza.from)
-        
-      # Users asks for "count players", show him how much players there are.
       else if message.startsWith('count players')
         dbc.query('SELECT count(*) FROM players;', (error, response) =>
           @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
@@ -114,6 +149,9 @@ class MatchMaker extends BasicBot
     processAction
     
     Handler for battleship-game related stanzas coming in
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
   ###
   processAction: (stanza) ->
     battleship = stanza.getChild('battleship')
@@ -130,6 +168,9 @@ class MatchMaker extends BasicBot
     help
     
     Just returns a little man page.
+    
+    Params:
+      - to [String] The recipiant for the help
   ###
   help: (to) ->
     @say(to, """You wanna help? Here you are:
@@ -138,7 +179,16 @@ class MatchMaker extends BasicBot
 
 #-----------------------------------------------------------------------------#
 
+###
+  Queue
+  
+  The class handling everything regarding the queue: Enqueueing, timeouts
+  and assigning
+###
 class Queue
+  ###
+    Constructor
+  ###
   constructor: (mm) ->
     @mm = mm
         
@@ -146,6 +196,9 @@ class Queue
     enqueueUser
     
     Prepare a queueing request for adding it to the queue
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
   ###
   enqueueUser: (stanza) ->
     jidParts = stanza.from.split('/')
@@ -166,6 +219,10 @@ class Queue
     addToQueue
     
     Add the user/resource to the queue.
+    
+    Params:
+      - uid [Integer] The UID of the enqueueing user
+      - resource [String] User's resource
   ###
   addToQueue: (uid, resource) ->
     # ToDo: Handle duplicate queue entries
@@ -179,7 +236,10 @@ class Queue
   ###
     returnQueueId
     
-    Kicks back the queue id
+    Send the queueid to the user to confirm it's enqueueing
+    
+    Params:
+      - qid [Integer] The queue id
   ###
   returnQueueId: (qid) ->
     dbc.query("SELECT queue.id, queue.resource, players.jid FROM queue, players WHERE queue.id = #{qid} AND players.id = queue.user_id  LIMIT 1", (error, response) =>
@@ -193,8 +253,12 @@ class Queue
   ###
     pingQueue
     
-    Ping the queue, reset the timestamp to keep the queue id
-    alive for another 30 seconds
+    Handle an incoming ping-request. Reset the timestamp to keep the
+    queueing alive
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
+      - queueing [XMLChild] The queueing part in the stanza
   ###
   pingQueue: (stanza, queueing) ->
     id = queueing.attrs.id
@@ -209,6 +273,10 @@ class Queue
     confirmPing
     
     Confirm a ping by sending it back to the client
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
+      - queueing [XMLChild] The queueing part in the stanza
   ###
   confirmPing: (stanza, queueing) ->
     id = queueing.attrs.id
@@ -267,14 +335,40 @@ class Queue
     
 #-----------------------------------------------------------------------------#
 
+###
+  Statistic
+  
+  The class handling all statistical stuff
+###
 class Statistic
+  ###
+    Constructor
+  ###
   constructor: (mm) ->
     @mm = mm
     
-  track: (stanza, result) ->
-    console.log('ohai. I just got an statistical item to track')
-    @insertOrPublish(stanza, result)
+  ###
+    Track
     
+    This functions takes care of collecting statistics
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
+      - result [XMLChild] The result part in the stanza
+  ###
+  track: (stanza, result) ->
+    @insertOrPublish(stanza, result)
+  
+  ###
+    insertOrPublish
+    
+    This function inserts a statisctical database entry or updates
+    it if it already exists.
+  
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
+      - result [XMLChild] The result part in the stanza
+  ###
   insertOrPublish: (stanza, result) ->
     user = result.attrs.winner.split("/")[0]
     dbc.query("SELECT id FROM players WHERE jid='#{user}'", (error, response) =>
@@ -296,14 +390,35 @@ class Statistic
       )
     )
 
+  ###
+    Confirm
+    
+    Confirm the incoming result
+    
+    Params:
+      - stanza [XMPPStanza] The incoming stanza
+      - result [XMLChild] The result part in the stanza
+  ###
   confirm: (stanza, result) ->
     @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': stanza.from})
       .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
       .c('result', {'status': 'saved', 'mid': result.attrs.mid, 'winner': result.attrs.winner})    
 
+    
 #-----------------------------------------------------------------------------#
 
-client = new xmpp.Client({jid: process.env.PLAYER_JID, password: process.env.PLAYER_PASSWORD})
+# initiate the database and switch to it. Note: node-mysql has an automatic
+# reconect mechanism, so we don't have to bother about that
+dbc = mysql.createClient({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+})
+dbc.query('USE ' + process.env.DB_DATABASE)
+
+#-----------------------------------------------------------------------------#
+
+client = new xmpp.Client({jid: process.env.XMPP_JID, password: process.env.XMPP_PASSWORD})
 mm = new MatchMaker(client)
 
 #-----------------------------------------------------------------------------#
