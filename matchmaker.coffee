@@ -47,6 +47,7 @@ class BasicBot
 class MatchMaker extends BasicBot
   constructor: (@xmppClient) ->
     @queue = new Queue(@)
+    @statistic = new Statistic(@)
     super(@xmppClient)
   
   ###
@@ -122,6 +123,8 @@ class MatchMaker extends BasicBot
           @queue.enqueueUser(stanza)
         if queueing.attrs.action == 'ping'
           @queue.pingQueue(stanza, queueing)
+      else if result = battleship.getChild('result')
+        @statistic.track(stanza, result)
            
   ###
     help
@@ -260,6 +263,21 @@ class Queue
         queueCount -= 2;
     )
     
+#-----------------------------------------------------------------------------#
+
+class Statistic
+  constructor: (mm) ->
+    @mm = mm
+    
+  track: (stanza, result) ->
+    console.log('ohai. I just got an statistical item to track')
+    @confirm(stanza, result)
+    
+  confirm: (stanza, result) ->
+    @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': stanza.from})
+      .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+      .c('result', {'status': 'saved', 'mid': result.attrs.mid, 'winner': result.attrs.winner})    
+
 #-----------------------------------------------------------------------------#
 
 client = new xmpp.Client({jid: process.env.PLAYER_JID, password: process.env.PLAYER_PASSWORD})
