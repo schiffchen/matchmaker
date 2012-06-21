@@ -356,8 +356,8 @@ class Queue
                 dbc.query("DELETE FROM queue WHERE id IN (#{response[0].id},#{response[1].id})")
               else
                 log("info", "Tried to assign two players, but I got no jids :O")
-            )
-            queueCount -= 2;
+          )
+          queueCount -= 2;
     )
     
 #-----------------------------------------------------------------------------#
