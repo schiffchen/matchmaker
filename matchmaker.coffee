@@ -31,6 +31,9 @@ if typeof String.prototype.startsWith != 'function'
 # we need that little helper method here.
 now_ts = ->
   Math.round((new Date()).getTime() / 1000)
+  
+log = (type, message) ->
+  console.log("[#{new Date()}][#{type}] #{message}")
 
 #-----------------------------------------------------------------------------#
 
@@ -142,7 +145,10 @@ class MatchMaker extends BasicBot
         @help(stanza.from)
       else if message.startsWith('count players')
         dbc.query('SELECT count(*) FROM players;', (error, response) =>
-          @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
+          if error
+            log("mysql", error)
+          else
+            @say(stanza.from, "Okay! I found #{response[0]['count(*)']} players.")
         )
         
   ###
@@ -205,13 +211,18 @@ class Queue
     id = 0
 
     dbc.query("SELECT id FROM players WHERE jid='#{jidParts[0]}' LIMIT 1", (error, response) =>
+      if error
+        log("mysql", error)
       if response[0]
         id = response[0]['id']
         @addToQueue(id, jidParts[1])
       else
         dbc.query("INSERT INTO players (jid) VALUES ('#{jidParts[0]}');
           SELECT id FROM players WHERE jid='#{jidParts[0]}' LIMIT 1", (error, response) => 
-          @addToQueue(response['insertId'], jidParts[1])
+          if error
+            log("mysql", error)
+          else
+            @addToQueue(response['insertId'], jidParts[1])
         )
     )
     
@@ -227,9 +238,12 @@ class Queue
   addToQueue: (uid, resource) ->
     # ToDo: Handle duplicate queue entries
     dbc.query("INSERT INTO queue (queued_at, user_id, resource) VALUES (#{now_ts()}, #{uid}, '#{resource}')", (error, response) =>
-      @returnQueueId(response['insertId'])
-      console.log("Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
-      @cleanupQueue()
+      if error
+        log("mysql", error)
+      else
+        @returnQueueId(response['insertId'])
+        log("info", "Enqueued user##{uid}, resource: #{resource}, queue##{response['insertId']}.")
+        @cleanupQueue()
     )
     @assignPlayers()
   
@@ -243,11 +257,13 @@ class Queue
   ###
   returnQueueId: (qid) ->
     dbc.query("SELECT queue.id, queue.resource, players.jid FROM queue, players WHERE queue.id = #{qid} AND players.id = queue.user_id  LIMIT 1", (error, response) =>
-      queueInformation = response[0]
-      
-      @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': "#{queueInformation['jid']}/#{queueInformation['resource']}"})
-        .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-        .c('queueing', {'action': 'success', 'id': queueInformation['id']})
+      if error
+        log("mysql", error)
+      else
+        queueInformation = response[0]
+        @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': "#{queueInformation['jid']}/#{queueInformation['resource']}"})
+          .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+          .c('queueing', {'action': 'success', 'id': queueInformation['id']})
     )
   
   ###
@@ -263,9 +279,12 @@ class Queue
   pingQueue: (stanza, queueing) ->
     id = queueing.attrs.id
     dbc.query("UPDATE queue SET queued_at=#{now_ts()} WHERE id=#{id}", (error, response) =>
-      @confirmPing(stanza, queueing)
-      console.log("Updated timestamp of qid#{id} because I got a ping.")
-      @cleanupQueue()
+      if error
+        log("mysql", error)
+      else
+        @confirmPing(stanza, queueing)
+        log("info", "Updated timestamp of qid#{id} because I got a ping.")
+        @cleanupQueue()
     )
     @assignPlayers()
     
@@ -292,7 +311,10 @@ class Queue
   cleanupQueue: ->
     expired = now_ts() - 30
     dbc.query("DELETE FROM queue WHERE queued_at <= #{expired}", (error, response) =>
-      console.log("Deleted #{response.affectedRows} expired queue ids")
+      if error
+        log("mysql", error)
+      else
+        log("info", "Deleted #{response.affectedRows} expired queue ids")
     )
     
   ###
@@ -304,33 +326,38 @@ class Queue
   assignPlayers: ->
     @cleanupQueue()
     dbc.query("SELECT count(*) FROM queue", (error, response) =>
-      queueCount = response[0]['count(*)']
-      console.log(queueCount)
-      while queueCount >= 2
-        dbc.query("SELECT queue.id, CONCAT(players.jid, '/', queue.resource) AS jid
-                   FROM queue, players WHERE players.id=queue.user_id    
-                   ORDER BY queue.queued_at ASC
-                   LIMIT 2", (error, response) =>
-          # Assign the two players to each other
-          if response.length == 2
-            matchid = require('crypto').createHash('md5').update("#{now_ts()}#{response[0].jid}#{response[1].jid}").digest('hex');
+      if error
+        log("mysql", error)
+      else
+        queueCount = response[0]['count(*)']
+        while queueCount >= 2
+          dbc.query("SELECT queue.id, CONCAT(players.jid, '/', queue.resource) AS jid
+                     FROM queue, players WHERE players.id=queue.user_id    
+                     ORDER BY queue.queued_at ASC
+                     LIMIT 2", (error, response) =>
+            if error
+              log("mysql", error)
+            else
+              # Assign the two players to each other
+              if response.length == 2
+                matchid = require('crypto').createHash('md5').update("#{now_ts()}#{response[0].jid}#{response[1].jid}").digest('hex');
             
-            @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[0].jid})
-              .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-              .c('queueing', {'action': 'assign', 'jid': response[1]['jid'], 'mid': matchid})
-            @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[1].jid})
-              .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
-              .c('queueing', {'action': 'assign', 'jid': response[0]['jid'], 'mid': matchid})
+                @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[0].jid})
+                  .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+                  .c('queueing', {'action': 'assign', 'jid': response[1]['jid'], 'mid': matchid})
+                @mm.xmppClient.send new xmpp.Element('message', {'type': 'normal', 'to': response[1].jid})
+                  .c('battleship', {'xmlns': 'http://battleship.me/xmlns/'})
+                  .c('queueing', {'action': 'assign', 'jid': response[0]['jid'], 'mid': matchid})
               
-            console.log("Assigned #{response[0]['jid']} and #{response[1]['jid']}. Match: #{matchid}")
+                log("info", "Assigned #{response[0]['jid']} and #{response[1]['jid']}. Match: #{matchid}")
             
-            # delete the queueing entry. maybe this should be done after confirmation
-            # todo
-            dbc.query("DELETE FROM queue WHERE id IN (#{response[0].id},#{response[1].id})")
-          else
-            console.log("Tried to assign two players, but I got no jids :O")
-        )
-        queueCount -= 2;
+                # delete the queueing entry. maybe this should be done after confirmation
+                # todo
+                dbc.query("DELETE FROM queue WHERE id IN (#{response[0].id},#{response[1].id})")
+              else
+                log("info", "Tried to assign two players, but I got no jids :O")
+            )
+            queueCount -= 2;
     )
     
 #-----------------------------------------------------------------------------#
@@ -378,14 +405,23 @@ class Statistic
         userid = 0
         
       dbc.query("SELECT id, public FROM statistics WHERE mid='#{result.attrs.mid}' LIMIT 1", (error, response) =>
+        if error
+          log("mysql", error)
+        
         if response.length > 0
           if response[0]['public']
             @confirm(stanza, result)
           else
-            dbc.query("UPDATE statistics SET public=1 WHERE id=#{response[0].id}")
+            dbc.query("UPDATE statistics SET public=1 WHERE id=#{response[0].id}", (error, response) =>
+              if error
+                log("mysql", error)  
+            )
             @confirm(stanza, result)
         else
-          dbc.query("INSERT INTO statistics (mid, winner_pid) VALUES (\"#{result.attrs.mid}\", #{userid})")
+          dbc.query("INSERT INTO statistics (mid, winner_pid) VALUES (\"#{result.attrs.mid}\", #{userid})", (error, response) =>
+            if error
+              log("mysql", error)
+          )
           @confirm(stanza, result)
       )
     )
