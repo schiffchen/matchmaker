@@ -281,7 +281,7 @@ class Queue
     dbc.query("UPDATE queue SET queued_at=#{now_ts()} WHERE id=#{id}", (error, response) =>
       if error
         log("mysql", error)
-      else
+      else if response.affectedRows > 0
         @confirmPing(stanza, queueing)
         log("info", "Updated timestamp of qid#{id} because I got a ping.")
         @cleanupQueue()
